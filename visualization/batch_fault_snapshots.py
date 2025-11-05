@@ -4,6 +4,7 @@ Batch process fault outputs to generate SRs and SRd snapshots
 for multiple timesteps or data files
 
 Usage:
+    pvpython batch_fault_snapshots.py -i input.xdmf --output-dir ./snapshots
     pvpython batch_fault_snapshots.py --data-dir /path/to/data --output-dir ./snapshots
 """
 
@@ -14,7 +15,9 @@ import glob
 from paraview.simple import *
 
 # Configuration
-DEFAULT_STATE_FILE = "/Users/DuoL/Documents/NSHM/Central/Paraviews/rakeNew.pvsm"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_STATE_FILE = os.path.join(SCRIPT_DIR, "rakeNew.pvsm")
+FALLBACK_STATE_FILE = "/Users/DuoL/Documents/NSHM/Central/Paraviews/rakeNew.pvsm"
 DEFAULT_OUTPUT_DIR = "./snapshots_batch"
 DEFAULT_RESOLUTION = (1920, 1080)
 
@@ -22,9 +25,16 @@ class BatchFaultProcessor:
     """Batch process fault data files to generate snapshots"""
 
     def __init__(self, state_file=None, output_dir=None, resolution=None):
-        self.state_file = state_file or DEFAULT_STATE_FILE
+        self.state_file = state_file
         self.output_dir = output_dir or DEFAULT_OUTPUT_DIR
         self.resolution = resolution or DEFAULT_RESOLUTION
+
+        # Determine state file to use if not explicitly provided
+        if not self.state_file:
+            if os.path.exists(DEFAULT_STATE_FILE):
+                self.state_file = DEFAULT_STATE_FILE
+            elif os.path.exists(FALLBACK_STATE_FILE):
+                self.state_file = FALLBACK_STATE_FILE
 
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
@@ -282,6 +292,9 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Process single XDMF file (all timesteps)
+  pvpython batch_fault_snapshots.py -i fault_output.xdmf -o ./snapshots
+
   # Process all XDMF files in a directory
   pvpython batch_fault_snapshots.py -d /path/to/data -o ./snapshots
 
@@ -292,9 +305,13 @@ Examples:
   pvpython batch_fault_snapshots.py --state-mode -s /path/to/state.pvsm
 
   # High resolution output
-  pvpython batch_fault_snapshots.py -d /path/to/data -r 3840 2160
+  pvpython batch_fault_snapshots.py -i data.xdmf -r 3840 2160
         """
     )
+
+    parser.add_argument('-i', '--input', '--data-file',
+                       dest='data_file',
+                       help='Path to single XDMF data file (process all timesteps)')
 
     parser.add_argument('-d', '--data-dir',
                        help='Directory containing data files')
@@ -314,8 +331,7 @@ Examples:
                        help=f'Image resolution (default: {DEFAULT_RESOLUTION[0]} {DEFAULT_RESOLUTION[1]})')
 
     parser.add_argument('-s', '--state-file',
-                       default=DEFAULT_STATE_FILE,
-                       help=f'ParaView state file (default: {DEFAULT_STATE_FILE})')
+                       help='ParaView state file (optional, for camera/view settings)')
 
     parser.add_argument('--state-mode',
                        action='store_true',
@@ -336,20 +352,33 @@ def main():
     )
 
     # Process based on mode
-    if args.state_mode:
-        # Process timesteps from state file
-        success = processor.process_timesteps_from_state()
-    else:
-        # Process data directory
-        if not args.data_dir:
-            print("Error: --data-dir is required when not in --state-mode")
+    if args.data_file:
+        # Mode 1: Process single XDMF file (all timesteps)
+        if not os.path.exists(args.data_file):
+            print(f"Error: Data file not found: {args.data_file}")
             sys.exit(1)
 
+        print("Mode: Processing single XDMF file")
+        # Process just this single file
+        success = processor.generate_snapshots_for_file(args.data_file)
+
+    elif args.state_mode:
+        # Mode 2: Process timesteps from state file
+        print("Mode: Processing timesteps from state file")
+        success = processor.process_timesteps_from_state()
+
+    elif args.data_dir:
+        # Mode 3: Process data directory
         if not os.path.exists(args.data_dir):
             print(f"Error: Data directory not found: {args.data_dir}")
             sys.exit(1)
 
+        print("Mode: Processing data directory")
         success = processor.process_directory(args.data_dir, args.pattern)
+
+    else:
+        print("Error: Either --input, --data-dir, or --state-mode must be specified")
+        sys.exit(1)
 
     sys.exit(0 if success else 1)
 

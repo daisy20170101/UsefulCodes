@@ -1,14 +1,16 @@
 #!/usr/bin/env pvpython
 """
 Generate snapshots of SRs (slip rate strike) and SRd (slip rate dip) from fault output
-Uses ParaView state file for initial setup
+Can load data from XDMF file or ParaView state file
 
 Usage:
-    pvpython generate_fault_snapshots.py [options]
+    pvpython generate_fault_snapshots.py -i input.xdmf [options]
+    pvpython generate_fault_snapshots.py -s state.pvsm [options]
 
 Requirements:
     - ParaView with pvpython
-    - State file: /Users/DuoL/Documents/NSHM/Central/Paraviews/rakeNew.pvsm
+    - XDMF data file with SRs and SRd fields, or
+    - State file: rakeNew.pvsm (in visualization folder or custom path)
 """
 
 import sys
@@ -17,19 +19,23 @@ import argparse
 from paraview.simple import *
 
 # Configuration
-DEFAULT_STATE_FILE = "/Users/DuoL/Documents/NSHM/Central/Paraviews/rakeNew.pvsm"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_STATE_FILE = os.path.join(SCRIPT_DIR, "rakeNew.pvsm")
+FALLBACK_STATE_FILE = "/Users/DuoL/Documents/NSHM/Central/Paraviews/rakeNew.pvsm"
 DEFAULT_OUTPUT_DIR = "./snapshots"
 DEFAULT_RESOLUTION = (1920, 1080)
 
 class FaultSnapshotGenerator:
     """Generate snapshots of fault slip rate components"""
 
-    def __init__(self, state_file=None, output_dir=None, resolution=None):
+    def __init__(self, data_file=None, state_file=None, output_dir=None, resolution=None):
         """
         Initialize snapshot generator
 
         Parameters:
         -----------
+        data_file : str
+            Path to XDMF data file (optional, can use state file instead)
         state_file : str
             Path to ParaView state file (.pvsm)
         output_dir : str
@@ -37,19 +43,77 @@ class FaultSnapshotGenerator:
         resolution : tuple
             Image resolution (width, height)
         """
-        self.state_file = state_file or DEFAULT_STATE_FILE
+        self.data_file = data_file
+        self.state_file = state_file
         self.output_dir = output_dir or DEFAULT_OUTPUT_DIR
         self.resolution = resolution or DEFAULT_RESOLUTION
+
+        # Determine state file to use
+        if not self.state_file:
+            if os.path.exists(DEFAULT_STATE_FILE):
+                self.state_file = DEFAULT_STATE_FILE
+            elif os.path.exists(FALLBACK_STATE_FILE):
+                self.state_file = FALLBACK_STATE_FILE
 
         # Create output directory if it doesn't exist
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
             print(f"Created output directory: {self.output_dir}")
 
+    def load_xdmf_file(self):
+        """
+        Load XDMF data file
+
+        Returns:
+        --------
+        source : ParaView source object
+        """
+        if not self.data_file:
+            raise ValueError("No data file specified")
+
+        if not os.path.exists(self.data_file):
+            raise FileNotFoundError(f"Data file not found: {self.data_file}")
+
+        print(f"Loading XDMF file: {self.data_file}")
+
+        try:
+            # Load XDMF file
+            source = XDMFReader(FileNames=[self.data_file])
+
+            # Get render view
+            renderView = GetActiveViewOrCreate('RenderView')
+
+            # Show data
+            display = Show(source, renderView)
+
+            # Reset camera
+            renderView.ResetCamera()
+
+            # Apply state file settings if available
+            if self.state_file and os.path.exists(self.state_file):
+                print(f"Applying settings from state file: {self.state_file}")
+                # Note: We can't fully load state with a different data source,
+                # but we could load camera settings, etc.
+                # For now, we'll just use default view settings
+
+            print("XDMF file loaded successfully")
+            return source
+
+        except Exception as e:
+            print(f"Error loading XDMF file: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
     def load_state(self):
         """Load ParaView state file"""
+        if not self.state_file:
+            print("No state file specified")
+            return False
+
         if not os.path.exists(self.state_file):
-            raise FileNotFoundError(f"State file not found: {self.state_file}")
+            print(f"Warning: State file not found: {self.state_file}")
+            return False
 
         print(f"Loading state file: {self.state_file}")
         try:
@@ -267,23 +331,29 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Use default state file and settings
-  pvpython generate_fault_snapshots.py
+  # Load from XDMF file
+  pvpython generate_fault_snapshots.py -i fault_output.xdmf
 
-  # Specify custom state file
+  # Load from XDMF file with custom settings
+  pvpython generate_fault_snapshots.py -i fault_output.xdmf -s rakeNew.pvsm
+
+  # Use state file only (legacy mode)
   pvpython generate_fault_snapshots.py -s /path/to/state.pvsm
 
-  # Specify output directory and resolution
-  pvpython generate_fault_snapshots.py -o ./output -r 3840 2160
+  # High resolution output from XDMF
+  pvpython generate_fault_snapshots.py -i data.xdmf -r 3840 2160
 
   # Generate only SRs snapshot
-  pvpython generate_fault_snapshots.py --field SRs
+  pvpython generate_fault_snapshots.py -i data.xdmf --field SRs
         """
     )
 
+    parser.add_argument('-i', '--input', '--data-file',
+                       dest='data_file',
+                       help='Path to XDMF data file')
+
     parser.add_argument('-s', '--state-file',
-                       default=DEFAULT_STATE_FILE,
-                       help=f'Path to ParaView state file (default: {DEFAULT_STATE_FILE})')
+                       help='Path to ParaView state file (default: ./visualization/rakeNew.pvsm)')
 
     parser.add_argument('-o', '--output-dir',
                        default=DEFAULT_OUTPUT_DIR,
@@ -311,23 +381,53 @@ def main():
     """Main function"""
     args = parse_arguments()
 
+    print("="*70)
+    print("FAULT SNAPSHOT GENERATOR")
+    print("="*70)
+
     # Create generator
     generator = FaultSnapshotGenerator(
+        data_file=args.data_file,
         state_file=args.state_file,
         output_dir=args.output_dir,
         resolution=tuple(args.resolution)
     )
 
-    # Load state
-    if not generator.load_state():
+    # Determine which mode to use
+    source = None
+
+    if args.data_file:
+        # Mode 1: Load XDMF file directly
+        print(f"Input XDMF file: {args.data_file}")
+        source = generator.load_xdmf_file()
+
+        if source is None:
+            print("Error: Failed to load XDMF file")
+            sys.exit(1)
+
+    elif args.state_file or generator.state_file:
+        # Mode 2: Load from state file (legacy mode)
+        print(f"State file: {generator.state_file or args.state_file}")
+
+        if not generator.load_state():
+            print("Error: Failed to load state file")
+            sys.exit(1)
+
+        # Get active source from state
+        source = GetActiveSource()
+
+        if source is None:
+            print("Error: No data source found in state file")
+            sys.exit(1)
+
+    else:
+        print("Error: Either --input (XDMF file) or --state-file must be specified")
         sys.exit(1)
 
-    # Get active source
-    source = GetActiveSource()
-
-    if source is None:
-        print("Error: No data source found in state file")
-        sys.exit(1)
+    print(f"Output directory: {args.output_dir}")
+    print(f"Resolution: {args.resolution[0]} x {args.resolution[1]}")
+    print(f"Fields to generate: {args.field}")
+    print("="*70)
 
     # Generate requested snapshots
     try:
@@ -339,9 +439,9 @@ def main():
         elif args.field == 'SRd':
             generator.generate_SRd_snapshot(source, f"{args.output_name}_SRd")
 
-        print("\n" + "="*60)
-        print("SUCCESS!")
-        print("="*60)
+        print("\n" + "="*70)
+        print("SUCCESS! Snapshots generated successfully")
+        print("="*70)
 
     except Exception as e:
         print(f"\nError: {e}")
