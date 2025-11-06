@@ -6,6 +6,7 @@ Loads vrNew2.pvsm state file and allows customization of:
 - Fault data file
 - Timestep to visualize
 - Variable name to color by
+- Color scale range (vmin, vmax)
 - Automatic camera adjustment to center and zoom on fault (150% view)
 
 The camera automatically centers on the fault geometry and zooms to show
@@ -14,6 +15,7 @@ The camera automatically centers on the fault geometry and zooms to show
 Usage:
     pvpython snapshot_from_state.py -i fault.xdmf -t 10 -v SRs
     pvpython snapshot_from_state.py -i fault.xdmf -t 0 -v SRd -o output.png
+    pvpython snapshot_from_state.py -i fault.xdmf -t 10 -v SRs --vmin 0 --vmax 10
 """
 
 import sys
@@ -32,7 +34,7 @@ DEFAULT_RESOLUTION = (1920, 1080)
 class StateFileSnapshotGenerator:
     """Generate snapshot from ParaView state file with custom parameters"""
 
-    def __init__(self, state_file, data_file, timestep, variable, output_file, resolution):
+    def __init__(self, state_file, data_file, timestep, variable, output_file, resolution, vmin=None, vmax=None):
         """
         Initialize generator
 
@@ -50,6 +52,10 @@ class StateFileSnapshotGenerator:
             Output file path for snapshot
         resolution : tuple
             Image resolution (width, height)
+        vmin : float, optional
+            Minimum value for color scale (default: auto from data)
+        vmax : float, optional
+            Maximum value for color scale (default: auto from data)
         """
         self.state_file = state_file
         self.data_file = data_file
@@ -57,6 +63,8 @@ class StateFileSnapshotGenerator:
         self.variable = variable
         self.output_file = output_file
         self.resolution = resolution
+        self.vmin = vmin
+        self.vmax = vmax
 
         # Validate inputs
         if not os.path.exists(self.state_file):
@@ -64,6 +72,11 @@ class StateFileSnapshotGenerator:
 
         if not os.path.exists(self.data_file):
             raise FileNotFoundError(f"Data file not found: {self.data_file}")
+
+        # Validate vmin/vmax
+        if self.vmin is not None and self.vmax is not None:
+            if self.vmin >= self.vmax:
+                raise ValueError(f"vmin ({self.vmin}) must be less than vmax ({self.vmax})")
 
     def load_state_and_replace_data(self):
         """
@@ -287,8 +300,25 @@ class StateFileSnapshotGenerator:
             # Get color transfer function
             lut = GetColorTransferFunction(self.variable)
 
-            # Rescale to data range
-            display.RescaleTransferFunctionToDataRange(True, False)
+            # Set color range
+            if self.vmin is not None and self.vmax is not None:
+                # Use custom range
+                print(f"  Setting custom color range: [{self.vmin}, {self.vmax}]")
+                lut.RescaleTransferFunction(self.vmin, self.vmax)
+                display.SetScalarBarVisibility(renderView, True)
+            elif self.vmin is not None or self.vmax is not None:
+                # Only one bound specified - get data range and use it for the other
+                display.RescaleTransferFunctionToDataRange(True, False)
+                data_range = lut.GetDataRange()
+                actual_vmin = self.vmin if self.vmin is not None else data_range[0]
+                actual_vmax = self.vmax if self.vmax is not None else data_range[1]
+                print(f"  Setting partial custom color range: [{actual_vmin}, {actual_vmax}]")
+                lut.RescaleTransferFunction(actual_vmin, actual_vmax)
+                display.SetScalarBarVisibility(renderView, True)
+            else:
+                # Automatic range from data
+                print(f"  Using automatic color range from data")
+                display.RescaleTransferFunctionToDataRange(True, False)
 
             # Setup color bar
             scalarBar = GetScalarBar(lut, renderView)
@@ -430,6 +460,10 @@ class StateFileSnapshotGenerator:
         print(f"Data file: {self.data_file}")
         print(f"Timestep: {self.timestep}")
         print(f"Variable: {self.variable}")
+        if self.vmin is not None or self.vmax is not None:
+            vmin_str = str(self.vmin) if self.vmin is not None else "auto"
+            vmax_str = str(self.vmax) if self.vmax is not None else "auto"
+            print(f"Color range: [{vmin_str}, {vmax_str}]")
         print(f"Output: {self.output_file}")
         print("="*70)
 
@@ -485,6 +519,12 @@ Examples:
 
   # High resolution output
   pvpython snapshot_from_state.py -i fault.xdmf -t 10 -v SRs -r 3840 2160
+
+  # Custom color scale range
+  pvpython snapshot_from_state.py -i fault.xdmf -t 10 -v SRs --vmin 0 --vmax 10
+
+  # Set only maximum value (minimum from data)
+  pvpython snapshot_from_state.py -i fault.xdmf -t 10 -v SRd --vmax 5.0
         """
     )
 
@@ -516,6 +556,16 @@ Examples:
                        metavar=('WIDTH', 'HEIGHT'),
                        help=f'Image resolution (default: {DEFAULT_RESOLUTION[0]} {DEFAULT_RESOLUTION[1]})')
 
+    parser.add_argument('--vmin',
+                       type=float,
+                       default=None,
+                       help='Minimum value for color scale (default: auto from data)')
+
+    parser.add_argument('--vmax',
+                       type=float,
+                       default=None,
+                       help='Maximum value for color scale (default: auto from data)')
+
     return parser.parse_args()
 
 
@@ -544,7 +594,9 @@ def main():
         timestep=args.timestep,
         variable=args.variable,
         output_file=args.output,
-        resolution=tuple(args.resolution)
+        resolution=tuple(args.resolution),
+        vmin=args.vmin,
+        vmax=args.vmax
     )
 
     # Generate snapshot
