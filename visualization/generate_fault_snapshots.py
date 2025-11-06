@@ -105,6 +105,57 @@ class FaultSnapshotGenerator:
             traceback.print_exc()
             return None
 
+    def get_timesteps(self, source):
+        """
+        Get available timesteps from source
+
+        Parameters:
+        -----------
+        source : ParaView source
+            Data source
+
+        Returns:
+        --------
+        list : List of timestep values
+        """
+        try:
+            # Get time keeper
+            animationScene = GetAnimationScene()
+            timeKeeper = animationScene.TimeKeeper
+
+            # Get timestep values
+            timesteps = timeKeeper.TimestepValues
+
+            if timesteps and len(timesteps) > 0:
+                return list(timesteps)
+            else:
+                # If no timesteps, assume single frame
+                return [0.0]
+
+        except Exception as e:
+            print(f"Warning: Could not get timesteps: {e}")
+            return [0.0]
+
+    def set_timestep(self, timestep_value):
+        """
+        Set current timestep
+
+        Parameters:
+        -----------
+        timestep_value : float
+            Timestep value to set
+        """
+        try:
+            animationScene = GetAnimationScene()
+            animationScene.AnimationTime = timestep_value
+
+            # Update view
+            renderView = self.get_active_view()
+            renderView.Update()
+
+        except Exception as e:
+            print(f"Warning: Could not set timestep: {e}")
+
     def load_state(self):
         """Load ParaView state file"""
         if not self.state_file:
@@ -282,6 +333,73 @@ class FaultSnapshotGenerator:
 
         return output_path
 
+    def generate_all_timesteps(self, source, field='all', output_prefix='fault'):
+        """
+        Generate snapshots for all timesteps
+
+        Parameters:
+        -----------
+        source : ParaView source
+            Data source
+        field : str
+            Field to generate: 'SRs', 'SRd', or 'all'
+        output_prefix : str
+            Output filename prefix
+
+        Returns:
+        --------
+        int : Number of timesteps processed
+        """
+        print("\n" + "="*70)
+        print("PROCESSING ALL TIMESTEPS")
+        print("="*70)
+
+        # Get available timesteps
+        timesteps = self.get_timesteps(source)
+
+        if not timesteps:
+            print("No timesteps found. Processing single frame.")
+            timesteps = [0.0]
+
+        print(f"Found {len(timesteps)} timestep(s)")
+        print(f"Field(s) to generate: {field}")
+        print(f"Output directory: {self.output_dir}")
+        print("="*70)
+
+        # Process each timestep
+        success_count = 0
+
+        for i, time_value in enumerate(timesteps):
+            print(f"\n[{i+1}/{len(timesteps)}] Processing timestep {i}: t = {time_value}")
+
+            try:
+                # Set current timestep
+                self.set_timestep(time_value)
+
+                # Generate output name with timestep number
+                output_name_srs = f"{output_prefix}_t{i:05d}_SRs"
+                output_name_srd = f"{output_prefix}_t{i:05d}_SRd"
+
+                # Generate snapshots based on field selection
+                if field == 'all' or field == 'SRs':
+                    self.generate_SRs_snapshot(source, output_name_srs)
+
+                if field == 'all' or field == 'SRd':
+                    self.generate_SRd_snapshot(source, output_name_srd)
+
+                success_count += 1
+
+            except Exception as e:
+                print(f"Error processing timestep {i}: {e}")
+                import traceback
+                traceback.print_exc()
+
+        print("\n" + "="*70)
+        print(f"COMPLETED: {success_count}/{len(timesteps)} timesteps processed")
+        print("="*70)
+
+        return success_count
+
     def generate_all_snapshots(self):
         """Generate all snapshots (SRs and SRd)"""
         print("\n" + "="*60)
@@ -334,17 +452,20 @@ Examples:
   # Load from XDMF file
   pvpython generate_fault_snapshots.py -i fault_output.xdmf
 
+  # Process all timesteps in XDMF file
+  pvpython generate_fault_snapshots.py -i fault_output.xdmf --all-timesteps
+
   # Load from XDMF file with custom settings
-  pvpython generate_fault_snapshots.py -i fault_output.xdmf -s rakeNew.pvsm
+  pvpython generate_fault_snapshots.py -i fault_output.xdmf -s rakeNew.pvsm --all-timesteps
 
   # Use state file only (legacy mode)
   pvpython generate_fault_snapshots.py -s /path/to/state.pvsm
 
-  # High resolution output from XDMF
-  pvpython generate_fault_snapshots.py -i data.xdmf -r 3840 2160
+  # High resolution output from XDMF with all timesteps
+  pvpython generate_fault_snapshots.py -i data.xdmf -r 3840 2160 --all-timesteps
 
-  # Generate only SRs snapshot
-  pvpython generate_fault_snapshots.py -i data.xdmf --field SRs
+  # Generate only SRs snapshots for all timesteps
+  pvpython generate_fault_snapshots.py -i data.xdmf --field SRs --all-timesteps
         """
     )
 
@@ -373,6 +494,10 @@ Examples:
     parser.add_argument('--output-name',
                        default='fault',
                        help='Output filename prefix (default: fault)')
+
+    parser.add_argument('--all-timesteps', '--timesteps',
+                       action='store_true',
+                       help='Process all timesteps in the data file')
 
     return parser.parse_args()
 
@@ -427,21 +552,36 @@ def main():
     print(f"Output directory: {args.output_dir}")
     print(f"Resolution: {args.resolution[0]} x {args.resolution[1]}")
     print(f"Fields to generate: {args.field}")
+    print(f"Process all timesteps: {args.all_timesteps}")
     print("="*70)
 
     # Generate requested snapshots
     try:
-        if args.field == 'all':
-            generator.generate_SRs_snapshot(source, f"{args.output_name}_SRs")
-            generator.generate_SRd_snapshot(source, f"{args.output_name}_SRd")
-        elif args.field == 'SRs':
-            generator.generate_SRs_snapshot(source, f"{args.output_name}_SRs")
-        elif args.field == 'SRd':
-            generator.generate_SRd_snapshot(source, f"{args.output_name}_SRd")
+        if args.all_timesteps:
+            # Process all timesteps
+            num_processed = generator.generate_all_timesteps(
+                source=source,
+                field=args.field,
+                output_prefix=args.output_name
+            )
 
-        print("\n" + "="*70)
-        print("SUCCESS! Snapshots generated successfully")
-        print("="*70)
+            print("\n" + "="*70)
+            print(f"SUCCESS! Processed {num_processed} timestep(s)")
+            print("="*70)
+
+        else:
+            # Process single timestep/frame
+            if args.field == 'all':
+                generator.generate_SRs_snapshot(source, f"{args.output_name}_SRs")
+                generator.generate_SRd_snapshot(source, f"{args.output_name}_SRd")
+            elif args.field == 'SRs':
+                generator.generate_SRs_snapshot(source, f"{args.output_name}_SRs")
+            elif args.field == 'SRd':
+                generator.generate_SRd_snapshot(source, f"{args.output_name}_SRd")
+
+            print("\n" + "="*70)
+            print("SUCCESS! Snapshots generated successfully")
+            print("="*70)
 
     except Exception as e:
         print(f"\nError: {e}")

@@ -13,8 +13,11 @@ The scripts use ParaView's Python interface (pvpython) and can load data directl
 ## Quick Start
 
 ```bash
-# Generate snapshots from XDMF file (recommended)
+# Generate snapshots from XDMF file (single frame)
 pvpython generate_fault_snapshots.py -i fault_output.xdmf
+
+# Generate snapshots for ALL timesteps ⭐ NEW!
+pvpython generate_fault_snapshots.py -i fault_output.xdmf --all-timesteps
 
 # Or use the wrapper script
 ./run_snapshots.sh -i fault_output.xdmf
@@ -52,8 +55,14 @@ Generate snapshots of SRs and SRd from XDMF files or ParaView state files.
 # Load from XDMF file (recommended)
 pvpython generate_fault_snapshots.py -i fault_output.xdmf
 
+# Process ALL timesteps in XDMF file ⭐ NEW!
+pvpython generate_fault_snapshots.py -i fault_output.xdmf --all-timesteps
+
 # Load from XDMF with custom state file for camera/view settings
 pvpython generate_fault_snapshots.py -i fault_output.xdmf -s rakeNew.pvsm
+
+# Process all timesteps with custom state file
+pvpython generate_fault_snapshots.py -i fault_output.xdmf -s rakeNew.pvsm --all-timesteps
 
 # Legacy: Load from state file only
 pvpython generate_fault_snapshots.py -s /path/to/state.pvsm
@@ -61,13 +70,13 @@ pvpython generate_fault_snapshots.py -s /path/to/state.pvsm
 # Custom output directory
 pvpython generate_fault_snapshots.py -i data.xdmf -o ./my_snapshots
 
-# High resolution output (4K)
-pvpython generate_fault_snapshots.py -i data.xdmf -r 3840 2160
+# High resolution output (4K) for all timesteps
+pvpython generate_fault_snapshots.py -i data.xdmf -r 3840 2160 --all-timesteps
 
-# Generate only SRs snapshot
-pvpython generate_fault_snapshots.py -i data.xdmf --field SRs
+# Generate only SRs snapshots for all timesteps
+pvpython generate_fault_snapshots.py -i data.xdmf --field SRs --all-timesteps
 
-# Generate only SRd snapshot
+# Generate only SRd snapshot (single frame)
 pvpython generate_fault_snapshots.py -i data.xdmf --field SRd
 ```
 
@@ -78,10 +87,16 @@ pvpython generate_fault_snapshots.py -i data.xdmf --field SRd
 - `-r, --resolution WIDTH HEIGHT`: Image resolution (default: 1920 1080)
 - `-f, --field {SRs,SRd,all}`: Field to visualize (default: all)
 - `--output-name`: Output filename prefix (default: fault)
+- `--all-timesteps`: **Process all timesteps in data file** ⭐ NEW!
 
-**Output:**
+**Output (single frame):**
 - `fault_SRs.png`: Snapshot of strike-slip rate component
 - `fault_SRd.png`: Snapshot of dip-slip rate component
+
+**Output (with --all-timesteps):**
+- `fault_t00000_SRs.png`, `fault_t00000_SRd.png`: Timestep 0
+- `fault_t00001_SRs.png`, `fault_t00001_SRd.png`: Timestep 1
+- ... (one pair per timestep)
 
 ### 2. `batch_fault_snapshots.py`
 
@@ -172,7 +187,39 @@ pvpython generate_fault_snapshots.py \
     -r 3840 2160
 ```
 
-### Example 4: Batch Process Single XDMF File
+### Example 4: Process All Timesteps ⭐ NEW!
+
+Generate snapshots for **all timesteps** in an XDMF file:
+
+```bash
+# Process all timesteps (recommended method)
+pvpython generate_fault_snapshots.py \
+    -i fault_output.xdmf \
+    --all-timesteps \
+    -o ./snapshots_all
+
+# Or with custom resolution
+pvpython generate_fault_snapshots.py \
+    -i fault_output.xdmf \
+    --all-timesteps \
+    -r 2560 1440 \
+    -o ./snapshots_all_hd
+```
+
+This generates numbered snapshots for each timestep:
+```
+./snapshots_all/fault_t00000_SRs.png
+./snapshots_all/fault_t00000_SRd.png
+./snapshots_all/fault_t00001_SRs.png
+./snapshots_all/fault_t00001_SRd.png
+./snapshots_all/fault_t00002_SRs.png
+./snapshots_all/fault_t00002_SRd.png
+...
+```
+
+**Note:** This is the **easiest way** to process all timesteps with `generate_fault_snapshots.py`!
+
+### Example 5: Batch Process Single XDMF File (Alternative Method)
 
 Process all timesteps in a single XDMF file:
 
