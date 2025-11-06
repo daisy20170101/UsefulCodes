@@ -136,25 +136,37 @@ class FaultSnapshotGenerator:
             print(f"Warning: Could not get timesteps: {e}")
             return [0.0]
 
-    def set_timestep(self, timestep_value):
+    def set_timestep(self, source, timestep_value):
         """
-        Set current timestep
+        Set current timestep and force data update
 
         Parameters:
         -----------
+        source : ParaView source
+            Data source to update
         timestep_value : float
             Timestep value to set
         """
         try:
+            # Set animation time
             animationScene = GetAnimationScene()
             animationScene.AnimationTime = timestep_value
 
-            # Update view
+            # CRITICAL: Force pipeline to update with new timestep data
+            # This ensures the source reads the correct timestep from the file
+            source.UpdatePipeline(timestep_value)
+
+            # Update view to reflect changes
             renderView = self.get_active_view()
             renderView.Update()
 
+            # Force a render to ensure visualization is updated
+            Render(renderView)
+
         except Exception as e:
             print(f"Warning: Could not set timestep: {e}")
+            import traceback
+            traceback.print_exc()
 
     def load_state(self):
         """Load ParaView state file"""
@@ -373,8 +385,17 @@ class FaultSnapshotGenerator:
             print(f"\n[{i+1}/{len(timesteps)}] Processing timestep {i}: t = {time_value}")
 
             try:
-                # Set current timestep
-                self.set_timestep(time_value)
+                # Set current timestep and force data update
+                # This is CRITICAL - without UpdatePipeline(), all frames show t=0 data
+                self.set_timestep(source, time_value)
+
+                # Verify data updated (optional debug info)
+                try:
+                    data_info = source.GetDataInformation()
+                    if hasattr(data_info, 'DataInformation'):
+                        print(f"  Data updated for time = {time_value}")
+                except:
+                    pass
 
                 # Generate output name with timestep number
                 output_name_srs = f"{output_prefix}_t{i:05d}_SRs"
