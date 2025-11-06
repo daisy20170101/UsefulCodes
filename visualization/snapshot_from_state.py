@@ -6,6 +6,10 @@ Loads vrNew2.pvsm state file and allows customization of:
 - Fault data file
 - Timestep to visualize
 - Variable name to color by
+- Automatic camera adjustment to center and zoom on fault (150% view)
+
+The camera automatically centers on the fault geometry and zooms to show
+150% of the fault bounds, giving nice composition with margins.
 
 Usage:
     pvpython snapshot_from_state.py -i fault.xdmf -t 10 -v SRs
@@ -303,6 +307,84 @@ class StateFileSnapshotGenerator:
             traceback.print_exc()
             raise
 
+    def adjust_camera_to_fault(self, source):
+        """
+        Adjust camera to center and zoom on fault geometry with 150% outline
+
+        Parameters:
+        -----------
+        source : ParaView source
+            Data source to zoom to
+        """
+        try:
+            print(f"\nAdjusting camera view to fault geometry...")
+
+            # Get render view
+            renderView = GetActiveViewOrCreate('RenderView')
+
+            # Get data bounds [xmin, xmax, ymin, ymax, zmin, zmax]
+            dataInfo = source.GetDataInformation()
+            bounds = dataInfo.GetBounds()
+
+            if not bounds or len(bounds) != 6:
+                print("Warning: Could not get data bounds, using default camera")
+                return
+
+            xmin, xmax, ymin, ymax, zmin, zmax = bounds
+
+            # Calculate center of geometry
+            center_x = (xmin + xmax) / 2.0
+            center_y = (ymin + ymax) / 2.0
+            center_z = (zmin + zmax) / 2.0
+
+            # Calculate size of geometry
+            size_x = xmax - xmin
+            size_y = ymax - ymin
+            size_z = zmax - zmin
+
+            print(f"  Fault bounds: X=[{xmin:.1f}, {xmax:.1f}], Y=[{ymin:.1f}, {ymax:.1f}], Z=[{zmin:.1f}, {zmax:.1f}]")
+            print(f"  Fault center: ({center_x:.1f}, {center_y:.1f}, {center_z:.1f})")
+            print(f"  Fault size: {size_x:.1f} x {size_y:.1f} x {size_z:.1f}")
+
+            # Expand bounds by 150% (multiply each dimension by 1.5)
+            # This means the geometry takes up 2/3 of view with nice margins
+            expansion_factor = 1.5
+            expanded_size_x = size_x * expansion_factor
+            expanded_size_y = size_y * expansion_factor
+            expanded_size_z = size_z * expansion_factor
+
+            # Calculate expanded bounds centered on geometry
+            expanded_xmin = center_x - expanded_size_x / 2.0
+            expanded_xmax = center_x + expanded_size_x / 2.0
+            expanded_ymin = center_y - expanded_size_y / 2.0
+            expanded_ymax = center_y + expanded_size_y / 2.0
+            expanded_zmin = center_z - expanded_size_z / 2.0
+            expanded_zmax = center_z + expanded_size_z / 2.0
+
+            expanded_bounds = [expanded_xmin, expanded_xmax,
+                             expanded_ymin, expanded_ymax,
+                             expanded_zmin, expanded_zmax]
+
+            print(f"  Expanded bounds (150%): X=[{expanded_xmin:.1f}, {expanded_xmax:.1f}], Y=[{expanded_ymin:.1f}, {expanded_ymax:.1f}], Z=[{expanded_zmin:.1f}, {expanded_zmax:.1f}]")
+
+            # Reset camera to expanded bounds
+            renderView.ResetCamera(expanded_bounds)
+
+            # Set focal point to center of geometry
+            renderView.CameraFocalPoint = [center_x, center_y, center_z]
+
+            # Update view
+            renderView.Update()
+            Render(renderView)
+
+            print(f"✓ Camera adjusted: centered on fault with 150% view")
+
+        except Exception as e:
+            print(f"Warning: Error adjusting camera: {e}")
+            print("Continuing with default camera view...")
+            import traceback
+            traceback.print_exc()
+
     def save_snapshot(self):
         """
         Save the current view as a snapshot
@@ -363,6 +445,9 @@ class StateFileSnapshotGenerator:
 
             # Set variable coloring
             self.set_coloring(source)
+
+            # Adjust camera to center and zoom on fault (150% view)
+            self.adjust_camera_to_fault(source)
 
             # Save snapshot
             self.save_snapshot()
