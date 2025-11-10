@@ -417,10 +417,18 @@ def generate_Ando_fault(geo_file='kaikoura_v11.3hpk2.geo', lc=2000, lc_coarse=10
     gmsh.model.setPhysicalName(3, 1, "volume")
     log(f"  ✓ Physical group 1: Volume (tag {box_volume})")
 
-    # Fault surfaces
+    # Individual fault surface physical groups (tags starting from 165)
+    log(f"\n  Adding individual fault physical groups (tags 165+):")
+    for i, fault_surf in enumerate(fault_surface_tags):
+        phys_tag = 165 + i
+        gmsh.model.addPhysicalGroup(2, [fault_surf], tag=phys_tag)
+        gmsh.model.setPhysicalName(2, phys_tag, f"fault_{i+1}")
+        log(f"    Physical Surface {phys_tag}: fault_{i+1} (surface {fault_surf})")
+
+    # Combined fault group for backward compatibility
     gmsh.model.addPhysicalGroup(2, fault_surface_tags, 103)
-    gmsh.model.setPhysicalName(2, 103, "fault")
-    log(f"  ✓ Physical group 103: Fault ({len(fault_surface_tags)} surfaces)")
+    gmsh.model.setPhysicalName(2, 103, "fault_all")
+    log(f"  ✓ Physical group 103: fault_all ({len(fault_surface_tags)} surfaces combined)")
 
     # Top surface
     gmsh.model.addPhysicalGroup(2, [surf_top], 101)

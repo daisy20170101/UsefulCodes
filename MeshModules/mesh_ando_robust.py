@@ -240,10 +240,18 @@ def generate_Ando_fault_robust(
     gmsh.model.setPhysicalName(3, 1, "volume")
     log(f"   ✓ Physical Volume 1: volume (tag {final_volume_tag})")
 
-    # Fault surfaces
+    # Individual fault surface physical groups (tags starting from 165)
+    log(f"\n   Adding individual fault physical groups (tags 165+):")
+    for i, fault_surf in enumerate(fault_surfaces):
+        phys_tag = 165 + i
+        gmsh.model.addPhysicalGroup(2, [fault_surf], tag=phys_tag)
+        gmsh.model.setPhysicalName(2, phys_tag, f"fault_{i+1}")
+        log(f"      Physical Surface {phys_tag}: fault_{i+1} (surface {fault_surf})")
+
+    # Combined fault group for backward compatibility
     gmsh.model.addPhysicalGroup(2, fault_surfaces, tag=103)
-    gmsh.model.setPhysicalName(2, 103, "fault")
-    log(f"   ✓ Physical Surface 103: fault ({len(fault_surfaces)} surfaces)")
+    gmsh.model.setPhysicalName(2, 103, "fault_all")
+    log(f"   ✓ Physical Surface 103: fault_all ({len(fault_surfaces)} surfaces combined)")
 
     # Top surface
     gmsh.model.addPhysicalGroup(2, [surf_top], tag=101)

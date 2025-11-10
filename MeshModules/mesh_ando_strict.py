@@ -233,14 +233,25 @@ def generate_Ando_fault_strict(
         # ==========================================
         print("\n[9/12] Adding physical groups...")
 
+        # Volume physical group
         gmsh.model.addPhysicalGroup(3, [vol_tag_after], tag=1)
         gmsh.model.setPhysicalName(3, 1, "volume")
         print(f"   ✓ Physical Volume 1: volume (tag {vol_tag_after})")
 
-        gmsh.model.addPhysicalGroup(2, fault_surfaces, tag=103)
-        gmsh.model.setPhysicalName(2, 103, "fault")
-        print(f"   ✓ Physical Surface 103: fault ({len(fault_surfaces)} surfaces)")
+        # Individual fault surface physical groups (tags starting from 165)
+        print(f"\n   Adding individual fault physical groups (tags 165+):")
+        for i, fault_surf in enumerate(fault_surfaces):
+            phys_tag = 165 + i
+            gmsh.model.addPhysicalGroup(2, [fault_surf], tag=phys_tag)
+            gmsh.model.setPhysicalName(2, phys_tag, f"fault_{i+1}")
+            print(f"      Physical Surface {phys_tag}: fault_{i+1} (surface {fault_surf})")
 
+        # Combined fault group for backward compatibility
+        gmsh.model.addPhysicalGroup(2, fault_surfaces, tag=103)
+        gmsh.model.setPhysicalName(2, 103, "fault_all")
+        print(f"   ✓ Physical Surface 103: fault_all ({len(fault_surfaces)} surfaces combined)")
+
+        # Box boundary surfaces
         gmsh.model.addPhysicalGroup(2, [surf_top], tag=101)
         gmsh.model.setPhysicalName(2, 101, "box_top")
 
