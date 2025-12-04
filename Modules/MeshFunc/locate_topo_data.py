@@ -1,0 +1,96 @@
+from netCDF4 import Dataset
+import pyproj
+import numpy as np
+
+def load_topo_data(ncfile):
+    """load structured topographic files in mesh file
+    transfer to Cartesian coordinates
+    
+     """
+    nc = Dataset(ncfile,'r')
+    lon= nc.variables['lon'][:]
+    lat = nc.variables['lat'][:]
+    topo = nc.variables['z'][:,:]
+    lons,lats=np.meshgrid(lon,lat)
+
+    samples = len(lon)
+    
+    min_latitude= lat.min()
+    min_longitude= lon.min()
+    
+    max_latitude= lat.max()
+    max_longitude= lon.max()
+    
+    mark_x = np.where( topo == -32768 )[0]
+    mark_y = np.where( topo == -32768 )[1]
+    # for x, y in zip(mark_x, mark_y) :
+    #     slice = topo[max(0, x-1):x+1, max(0,y-1):y+1] # assuming a 5x5 square
+    #     topo[x,y] = np.mean([i for i in slice.flatten() if i > 0])  # threshold is 0
+    
+    x_lon = np.linspace((min_longitude),(max_longitude),samples)
+    y_lat = np.linspace((min_latitude),(max_latitude),samples)
+    
+    # UTM projection
+    lla = pyproj.Proj(proj='latlong', ellps='WGS84', datum='WGS84')
+    myproj = pyproj.Proj(init='epsg:2193', datum='WGS84')
+    
+    xyz_map = pyproj.transform(lla, myproj, x_lon,y_lat,np.zeros(len(x_lon)), radians=False)
+    x = xyz_map[0]
+    y = xyz_map[1]
+    # print(x,y)
+    
+    # Wellington city Epicenter coordinate
+    lat_sou = -41.3
+    lon_sou = 174.75 
+    xyz_sou = pyproj.transform(lla, myproj, lon_sou,lat_sou, radians=False) # Epicenter in UTM domain
+    print(xyz_sou)
+    
+    xmin = x[0] # Unit (m)
+    xmax = x[-1]
+    
+    ymin = y[0]
+    ymax = y[-1]
+
+    return topo, x, y
+
+def locate_modify_topo(ncfile,xcoord,ycoord):
+    """ modified the elevation of each node in the free surface physical group
+    need function load_topo_data to load topographic data
+    """
+    
+    nc = Dataset(ncfile,'r')
+    lon= nc.variables['lon'][:]
+    lat = nc.variables['lat'][:]
+    topo = nc.variables['z'][:,:]
+
+    samples = len(lon)
+    
+    min_latitude= lat.min()
+    min_longitude= lon.min()
+    
+    max_latitude= lat.max()
+    max_longitude= lon.max()
+    
+    mark_x = np.where( topo == -32768 )[0]
+    mark_y = np.where( topo == -32768 )[1]
+
+    x_lon = np.linspace((min_longitude),(max_longitude),samples)
+    y_lat = np.linspace((min_latitude),(max_latitude),samples)
+    
+    # UTM projection
+    lla = pyproj.Proj(proj='latlong', ellps='WGS84', datum='WGS84')
+    myproj = pyproj.Proj(init='epsg:2193', datum='WGS84')
+    
+    x,y = pyproj.transform(lla, myproj, x_lon,y_lat, radians=False)
+
+    # print(x.shape,y.shape)
+    # print(x,y)
+    
+    z_new = np.zeros(xcoord.shape)
+    
+    for k in range(z_new.size):
+        indx = (np.abs(x-xcoord[k])).argmin()
+        indy = (np.abs(y-ycoord[k])).argmin()
+        z_new[k] = topo[indy,indx]
+
+    return z_new
